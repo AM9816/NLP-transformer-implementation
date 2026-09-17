@@ -8,12 +8,14 @@ from xxhash import xxh3_128_hexdigest as fasthash
 class TextDataset(torch.utils.data.Dataset):
     def __init__(self, path, seqLength = 128, stride=1,
                  minTokenFreq = 2, unknownToken='<UNKNOWN>',
-                 eosToken = '<EOS>', cacheDataset = False):
+                 eosToken = '<EOS>', cacheDataset = False,
+                 charLevel = False):
 
         cachePath = f"{path}.pt" if cacheDataset else None
 
         self.stride = stride
         self.seqLength = seqLength
+        self.isChLevel = charLevel
 
         if cacheDataset and os.path.exists(cachePath):
             try:
@@ -37,8 +39,12 @@ class TextDataset(torch.utils.data.Dataset):
             text = text.replace("\n\n", f" {eosToken} ")
 
         text = text.lower().replace('<unk>', '') 
-        
-        tokens = re.findall(r"<[^\s>]+>|\w+", text)
+
+        # char vs word level tokenization        
+        if charLevel:
+            tokens = re.findall(r"<[^\s>]+>|[\s\S]", text)
+        else:
+            tokens = re.findall(r"<[^\s>]+>|\w+", text)
 
         self.unknown = unknownToken        
         self.eos = eosToken

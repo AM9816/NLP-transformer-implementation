@@ -119,6 +119,7 @@ class Transformer(nn.Module):
     def generate(self, start, dataset, 
                  maxLength = 1024, temperature = 1.,
                  generator = True, forceMaxLength = False,
+                 maskTopK = 48,
                  device=gpu):
         
         with torch.no_grad():
@@ -131,7 +132,9 @@ class Transformer(nn.Module):
             eos = dataset.eos
             eosId = dataset.vocab.get(eos, 1)
 
-            tokens = start.split()
+            tokens = list(start) if dataset.isChLevel else start.split()
+
+
             ids = [
                 dataset.vocab.get(tok, unknownId) for tok in tokens
             ] if tokens else [unknownId]
@@ -161,6 +164,15 @@ class Transformer(nn.Module):
                 if forceMaxLength:
                     nextLogits[:, eosId] = float('-inf')
 
+                if maskTopK is not None:
+                    values, _ = torch.topk(nextLogits, maskTopK)
+                    _min = values[:, -1].unsqueeze(-1)
+                    nextLogits = torch.where(
+                        nextLogits < _min,
+                        torch.full_like(nextLogits, float('-inf')),
+                        nextLogits
+                    )
+
                 if temperature > 0:
                     dist = functional.softmax(nextLogits, dim=-1)
                     nextId = torch.multinomial(dist, num_samples=1)
@@ -173,7 +185,7 @@ class Transformer(nn.Module):
                     # yield ' '.join([
                     #     id_token.get(_id.item(), unknown) for _id in out[0]
                     # ])
-                    yield f'{id_token[nextId.item()]} '
+                    yield f'{id_token[nextId.item()]}{"" if dataset.isChLevel else " "}'
 
                 if nextId.item() == eosId:
                     break
@@ -273,7 +285,7 @@ def train_transformer(model: Transformer, dataset: TextDataset,
 
 if __name__ == '__main__':
 
-    bsize = 32
+    bsize = 128
     lr = 3e-4
     seql = 256
     stride = 128
@@ -283,28 +295,38 @@ if __name__ == '__main__':
     # # for f in range(10):
 
     dataset = TextDataset('wikitext.txt', seql, stride,
-                        minTokenFreq=6)
+                        minTokenFreq=6, charLevel=True)
     print(f'vocab size = {dataset.vocabSize()}')
     
 
-    model = Transformer(dataset.vocabSize(),
-                        dropout = .1)
-    # # model = loadModel()
+    # model = Transformer(dataset.vocabSize(),
+    #                     dropout = .1)
+    model:Transformer = loadModel()
     # print(model)
 
     print("effective max matrix size = "
           f"{bsize * dataset.vocabSize()}")
     
-    train_transformer(model, dataset, bsize, lr, 20,
-                      doCompile=False,
-                      trainTestSplit=ttsplit)
+    # train_transformer(model, dataset, bsize, lr, 20,
+    #                   doCompile=False,
+    #                   trainTestSplit=ttsplit)
 
 
 
-    # model:Transformer = loadModel(r"C:\\Users\\artur\\Downloads\\latest (25).pt")
-    # print(model)
+    # model:Transformer = loadModel(r"latest (27).pt")
+    # # model:Transformer = loadModel(r"C:\\Users\\artur\\Downloads\\latest (25).pt")
+    # #print(model)
 
-    # for word in model.generate("josh likes ", dataset, int(1e2), .5, 
-    #                            forceMaxLength=True):
-    #     print(word, end = '')
+    out = []
+    for word in model.generate("josh is ", dataset, 1000, 0.7,
+                                forceMaxLength=True):
+        print(word, end="")
+        out.append(word)
+
+    print(len(out)); exit()
+    # for t in [0, 0.1, 0.5, 0.7, 1, 1.2, 1.5]:
+
+    #     for word in model.generate("josh likes ", dataset, int(1e2), t, 
+    #                             forceMaxLength=True):
+    #         print(word, end = '')
 
